@@ -41,10 +41,6 @@ L="$FLYNN_CMD" && curl -sSL -A "`uname -sp`" https://dl.flynn.io/cli | zcat >$L 
 echo "Adding cluster $FLYNN_CLUSTER_HOST..."
 "$FLYNN_CMD" cluster add -p "$FLYNN_TLS_PIN" "$FLYNN_CLUSTER_HOST" "$FLYNN_CLUSTER_HOST" "$FLYNN_CONTROLLER_KEY"
 
-echo "Setup acme-challange path route"
-"$FLYNN_CMD" -c "$FLYNN_CLUSTER_HOST" -a "certbot" route add http "$DOMAIN/.well-known/acme-challenge/"
-echo "done"
-
 echo "Generating certificate..."
 certbot certonly \
   --work-dir "$CERTBOT_WORK_DIR" \
