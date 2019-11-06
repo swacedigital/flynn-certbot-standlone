@@ -3,14 +3,6 @@ FLYNN_CMD="/app/flynn"
 CERTBOT_WORK_DIR="/app"
 CERTBOT_CONFIG_DIR="/app/config"
 
-echo $APP_NAMES
-echo $DOMAIN
-echo $LETS_ENCRYPT_EMAIL
-echo $FLYNN_CLUSTER_HOST
-echo $FLYNN_CONTROLLER_KEY
-echo $FLYNN_TLS_PIN
-
-
 if [ -z "$APP_NAMES" ]; then
     echo "APP_NAMES must be set"
     exit 1
@@ -55,12 +47,10 @@ echo "done"
 
 echo "Generating certificate..."
 certbot certonly \
-  --standalone \
   --work-dir "$CERTBOT_WORK_DIR" \
   --config-dir "$CERTBOT_CONFIG_DIR" \
   --logs-dir "$CERTBOT_WORK_DIR/logs" \
   --agree-tos \
-  --no-eff-email \
   --email $LETS_ENCRYPT_EMAIL \
   --dns-route53
   --dns-route53-propagation-seconds 30 \
