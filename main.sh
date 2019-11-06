@@ -3,13 +3,21 @@ FLYNN_CMD="/app/flynn"
 CERTBOT_WORK_DIR="/app"
 CERTBOT_CONFIG_DIR="/app/config"
 
-if [ -z "$APP_NAME" ]; then
-    echo "$APP_NAME must be set"
+echo $APP_NAMES
+echo $DOMAIN
+echo $LETS_ENCRYPT_EMAIL
+echo $FLYNN_CLUSTER_HOST
+echo $FLYNN_CONTROLLER_KEY
+echo $FLYNN_TLS_PIN
+
+
+if [ -z "$APP_NAMES" ]; then
+    echo "APP_NAMES must be set"
     exit 1
 fi
 
 if [ -z "$DOMAIN" ]; then
-    echo "$DOMAIN must be set"
+    echo "DOMAIN must be set"
     exit 1
 fi
 
@@ -41,20 +49,8 @@ L="$FLYNN_CMD" && curl -sSL -A "`uname -sp`" https://dl.flynn.io/cli | zcat >$L 
 echo "Adding cluster $FLYNN_CLUSTER_HOST..."
 "$FLYNN_CMD" cluster add -p "$FLYNN_TLS_PIN" "$FLYNN_CLUSTER_HOST" "$FLYNN_CLUSTER_HOST" "$FLYNN_CONTROLLER_KEY"
 
-# Extract route id
-APP_NAME="${APP_NAME}"
-DOMAIN="${DOMAIN}"
-
-echo "Extracting route id.."
-ROUTE_ID=$("$FLYNN_CMD" -c "$FLYNN_CLUSTER_HOST" -a "$APP_NAME" route | grep "$DOMAIN" | awk '{print $3}')
-
-if [[ -z "$ROUTE_ID" ]]; then
-    echo "Cannot determine route id: $ROUTE_ID"
-    exit 1
-fi
-
 echo "Setup acme-challange path route"
-"$FLYNN_CMD" -c "$FLYNN_CLUSTER_HOST" -a "certbot-$APP_NAME" route add http "$DOMAIN/.well-known/acme-challenge/"
+"$FLYNN_CMD" -c "$FLYNN_CLUSTER_HOST" -a "certbot" route add http "$DOMAIN/.well-known/acme-challenge/"
 echo "done"
 
 echo "Generating certificate..."
@@ -66,29 +62,30 @@ certbot certonly \
   --agree-tos \
   --no-eff-email \
   --email $LETS_ENCRYPT_EMAIL \
-  --preferred-challenges http \
-  --http-01-port  8080 \
-  -d "$DOMAIN"
+  --dns-route53
+  --dns-route53-propagation-seconds 30 \
+  -d "$DOMAIN" \
 
-echo "Updating certificates via Flynn routes... '$DOMAIN' for app '$APP_NAME'..."
-"$FLYNN_CMD" -c "$FLYNN_CLUSTER_HOST" -a "$APP_NAME" route update "$ROUTE_ID" \
-    --tls-cert "$CERTBOT_CONFIG_DIR/live/$DOMAIN/fullchain.pem" \
-    --tls-key "$CERTBOT_CONFIG_DIR/live/$DOMAIN/privkey.pem"
-echo "done"
-
+DOMAIN="${DOMAIN}"
+IFS=',' # space is set as delimiter
+read -ra NAMES <<< "$APP_NAMES"
 while true
-do
-    echo "Renewing certificate..."
-    certbot renew \
-        --work-dir "$CERTBOT_WORK_DIR" \
-        --config-dir "$CERTBOT_CONFIG_DIR" \
-        --logs-dir "$CERTBOT_WORK_DIR/logs"
+    for NAME in "${NAMES[@]}"; do
+        APP_NAME="${NAME}"
+        # Extract route id
+        echo "Extracting route id.."
+        ROUTE_ID=$("$FLYNN_CMD" -c "$FLYNN_CLUSTER_HOST" -a "$APP_NAME" route | grep "$DOMAIN" | awk '{print $3}')
 
-    echo "Updating certificates via Flynn routes... '$DOMAIN' for app '$APP_NAME'..."
-    "$FLYNN_CMD" -c "$FLYNN_CLUSTER_HOST" -a "$APP_NAME" route update "$ROUTE_ID" \
-        --tls-cert "$CERTBOT_CONFIG_DIR/live/$DOMAIN/fullchain.pem" \
-        --tls-key "$CERTBOT_CONFIG_DIR/live/$DOMAIN/privkey.pem"
-    echo "done"
+        if [[ -z "$ROUTE_ID" ]]; then
+            echo "Cannot determine route id: $ROUTE_ID"
+            exit 1
+        fi
 
+        echo "Updating certificates via Flynn routes... '$DOMAIN' for app '$APP_NAME'..."
+        "$FLYNN_CMD" -c "$FLYNN_CLUSTER_HOST" -a "$APP_NAME" route update "$ROUTE_ID" \
+            --tls-cert "$CERTBOT_CONFIG_DIR/live/$DOMAIN/fullchain.pem" \
+            --tls-key "$CERTBOT_CONFIG_DIR/live/$DOMAIN/privkey.pem"
+        echo "done"
+    done
     sleep 7d
 done
