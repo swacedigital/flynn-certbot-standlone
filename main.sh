@@ -43,35 +43,46 @@ echo "Adding cluster $FLYNN_CLUSTER_HOST..."
 
 echo "Generating certificate..."
 certbot certonly \
+  --non-interactive \
   --work-dir "$CERTBOT_WORK_DIR" \
   --config-dir "$CERTBOT_CONFIG_DIR" \
   --logs-dir "$CERTBOT_WORK_DIR/logs" \
   --agree-tos \
   --email $LETS_ENCRYPT_EMAIL \
-  --dns-route53
+  --dns-route53 \
   --dns-route53-propagation-seconds 30 \
   -d "$DOMAIN" \
+  -d "*.$DOMAIN"
+
+if [ ! -f "$CERTBOT_CONFIG_DIR/live/$DOMAIN/fullchain.pem" ]; then
+    echo "Missing certificate file fullchain.pem"
+    exit 1
+fi
+if [ ! -f "$CERTBOT_CONFIG_DIR/live/$DOMAIN/privkey.pem" ]; then
+    echo "Missing private key file privkey.pem"
+    exit 1
+fi
+
 
 DOMAIN="${DOMAIN}"
-IFS=',' # space is set as delimiter
+IFS_PREV=$IFS
+IFS=',' # , is set as delimiter
 read -ra NAMES <<< "$APP_NAMES"
-while true
-    for NAME in "${NAMES[@]}"; do
-        APP_NAME="${NAME}"
-        # Extract route id
+IFS=$IFS_PREV
+while true; do
+    for APP_NAME in "${NAMES[@]}"; do
         echo "Extracting route id.."
-        ROUTE_ID=$("$FLYNN_CMD" -c "$FLYNN_CLUSTER_HOST" -a "$APP_NAME" route | grep "$DOMAIN" | awk '{print $3}')
-
-        if [[ -z "$ROUTE_ID" ]]; then
-            echo "Cannot determine route id: $ROUTE_ID"
-            exit 1
-        fi
-
-        echo "Updating certificates via Flynn routes... '$DOMAIN' for app '$APP_NAME'..."
-        "$FLYNN_CMD" -c "$FLYNN_CLUSTER_HOST" -a "$APP_NAME" route update "$ROUTE_ID" \
+        ROUTES=$("$FLYNN_CMD" -c "$FLYNN_CLUSTER_HOST" -a "$APP_NAME" route | awk '{print $3}')
+        for ROUTE_ID in $ROUTES; do
+            if [[ $ROUTE_ID == "ID" ]]; then continue; fi
+            echo "Updating certificates via Flynn routes for app '$APP_NAME' and route: '$ROUTE_ID'"
+            "$FLYNN_CMD" -c "$FLYNN_CLUSTER_HOST" -a "$APP_NAME" route update "$ROUTE_ID" \
             --tls-cert "$CERTBOT_CONFIG_DIR/live/$DOMAIN/fullchain.pem" \
             --tls-key "$CERTBOT_CONFIG_DIR/live/$DOMAIN/privkey.pem"
-        echo "done"
+        done
+
+
+        echo "Done updating routes for $APP_NAME"
     done
     sleep 7d
 done
